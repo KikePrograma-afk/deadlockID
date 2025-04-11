@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deadlock Match Details Fetcher</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            background-color: #f9f9f9;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-right: 10px;
+            width: 200px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f8f8f8;
+        }
+        #matchInfo p {
+            margin: 5px 0;
+        }
+        #status, #error {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        #status {
+            color: #155724;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            display: none;
+        }
+        #error {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            font-weight: bold;
+            display: none;
+        }
+        .input-group {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+        }
+        .input-group label {
+             margin: 0 10px 0 0;
+             display: inline-block;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Deadlock Match Details Finder</h1>
+
+    <div class="input-group">
+        <label for="matchIdInput">Match ID:</label>
+        <input type="text" id="matchIdInput" placeholder="Enter Match ID (e.g., 34756770)">
+        <button id="fetchButton">Fetch Match Details</button>
+    </div>
+
+    <div id="status"></div>
+    <div id="error"></div>
+
+    <div id="matchDetailsContainer" style="display: none;">
+        <h2 id="matchIdHeader"></h2>
+        <div id="matchInfo"></div>
+        <div id="playerTableContainer"></div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const matchIdInput = document.getElementById('matchIdInput');
+        const fetchButton = document.getElementById('fetchButton');
+        const matchDetailsContainer = document.getElementById('matchDetailsContainer');
+        const matchIdHeader = document.getElementById('matchIdHeader');
+        const matchInfoDiv = document.getElementById('matchInfo');
+        const tableContainerDiv = document.getElementById('playerTableContainer');
+        const statusDiv = document.getElementById('status');
+        const errorDiv = document.getElementById('error');
+
+        function formatDuration(seconds) {
+            if (typeof seconds !== 'number' || isNaN(seconds)) return 'N/A';
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.round(seconds % 60);
+            return `${minutes}m ${remainingSeconds}s`;
+        }
+
+        function formatTimestamp(timestamp) {
+            if (typeof timestamp !== 'number' || isNaN(timestamp) || timestamp <= 0) {
+                return 'N/A';
+            }
+            try {
+                const date = new Date(timestamp * 1000);
+                return date.toLocaleString();
+            } catch (e) {
+                return 'Invalid Date';
+            }
+        }
+
+        function fetchMatchData() {
+            const matchId = matchIdInput.value.trim();
+
+            statusDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            matchDetailsContainer.style.display = 'none';
+            matchInfoDiv.innerHTML = '';
+            tableContainerDiv.innerHTML = '';
+            fetchButton.disabled = true;
+
+            if (!matchId) {
+                errorDiv.textContent = 'Please enter a Match ID.';
+                errorDiv.style.display = 'block';
+                fetchButton.disabled = false;
+                return;
+            }
+            if (!/^\d+$/.test(matchId)) {
+                errorDiv.textContent = 'Match ID should only contain numbers.';
+                errorDiv.style.display = 'block';
+                fetchButton.disabled = false;
+                return;
+            }
+
+            const apiUrl = `https://api.deadlock-api.com/v1/matches/${matchId}/metadata`;
+
+            statusDiv.textContent = `Fetching data for Match ID: ${matchId}...`;
+            statusDiv.style.display = 'block';
+
+            fetch(apiUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        if (response.status === 404) {
+                            throw new Error(`Match ID ${matchId} not found (404).`);
+                        }
+                        throw new Error(`HTTP error! Status: ${response.status} ${response.statusText}`);
+                    }
+                    const contentType = response.headers.get("content-type");
+                    if (contentType && contentType.indexOf("application/json") !== -1) {
+                        return response.json();
+                    } else {
+                        throw new Error(`Unexpected content type: ${contentType}. Expected JSON.`);
+                    }
+                })
+                .then(data => {
+                    statusDiv.style.display = 'none';
+                    if (!data || !data.match_info) {
+                        throw new Error('Invalid or incomplete data structure received from API.');
+                    }
+
+                    const matchInfo = data.match_info;
+                    const players = matchInfo.players || [];
+
+                    const startTime = formatTimestamp(matchInfo.start_time);
+                    const duration = formatDuration(matchInfo.duration_s);
+                    const winningTeamDisplay = matchInfo.winning_team !== undefined && matchInfo.winning_team !== null
+                        ? `Team ${matchInfo.winning_team}`
+                        : 'N/A';
+
+                    matchIdHeader.textContent = `Details for Match ID: ${matchId}`;
+                    matchInfoDiv.innerHTML = `
+                        <p><strong>Fecha y hora:</strong> ${startTime}</p>
+                        <p><strong>Duration:</strong> ${duration}</p>
+                        <p><strong>Winning Team:</strong> ${winningTeamDisplay}</p>
+                    `;
+
+                    let tableHtml = `
+                        <h2>Player Stats</h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Account ID</th>
+                                    <th>Team</th>
+                                    <th>Hero ID</th>
+                                    <th>K / D / A</th>
+                                    <th>Level</th>
+                                    <th>Last Hits</th>
+                                    <th>Denies</th>
+                                    <th>Net Worth</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+
+                    players.sort((a, b) => (a.team || 0) - (b.team || 0) || (a.player_slot || 0) - (b.player_slot || 0));
+
+                    players.forEach(player => {
+                        const accountId = player.account_id !== undefined ? player.account_id : 'N/A';
+                        const team = player.team !== undefined ? `Team ${player.team}` : 'N/A';
+                        const heroId = player.hero_id !== undefined ? player.hero_id : 'N/A';
+                        const kda = `${player.kills ?? 'N/A'} / ${player.deaths ?? 'N/A'} / ${player.assists ?? 'N/A'}`;
+                        const level = player.level ?? 'N/A';
+                        const lastHits = player.last_hits ?? 0;
+                        const denies = player.denies ?? 0;
+                        const netWorth = player.net_worth ?? 0;
+
+                        tableHtml += `
+                            <tr>
+                                <td>${accountId}</td>
+                                <td>${team}</td>
+                                <td>${heroId}</td>
+                                <td>${kda}</td>
+                                <td>${level}</td>
+                                <td>${lastHits.toLocaleString()}</td>
+                                <td>${denies.toLocaleString()}</td>
+                                <td>${netWorth.toLocaleString()}</td>
+                            </tr>
+                        `;
+                    });
+
+                    tableHtml += `
+                            </tbody>
+                        </table>
+                    `;
+
+                    tableContainerDiv.innerHTML = tableHtml;
+                    matchDetailsContainer.style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error fetching or processing data:', error);
+                    statusDiv.style.display = 'none';
+                    errorDiv.textContent = `Error: ${error.message}`;
+                    errorDiv.style.display = 'block';
+                    matchDetailsContainer.style.display = 'none';
+                })
+                .finally(() => {
+                    fetchButton.disabled = false;
+                });
+        }
+
+        fetchButton.addEventListener('click', fetchMatchData);
+
+        matchIdInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                fetchButton.click();
+            }
+        });
+    });
+</script>
+
+</body>
+</html>
